@@ -230,7 +230,7 @@ func (r *FileBackedRunner) CacheFunction(ctx context.Context, name string, req *
 		return rsp, nil
 	}
 
-	// Don't cache responses that have unfulfilled requirements.
+	// Don't cache responses that have unfulfilled required resources.
 	// Functions that request extra resources need to be called again once
 	// those resources are available. If we cache the response before the
 	// resources are provided, subsequent calls will get the cached response
@@ -434,23 +434,27 @@ func (r *FileBackedRunner) GarbageCollectFilesNow(ctx context.Context) (int, err
 // needs to be called again once the requirements are satisfied.
 func hasUnfulfilledRequirements(req *fnv1.RunFunctionRequest, rsp *fnv1.RunFunctionResponse) bool {
 	requirements := rsp.GetRequirements()
-	if requirements == nil {
+	if requirements == nil || (len(requirements.GetResources()) == 0 && len(requirements.GetExtraResources()) == 0) { //nolint:staticcheck // Supporting deprecated field for backward compatibility
 		return false
 	}
 
-	// Check if the response has requested resources
-	if len(requirements.GetResources()) > 0 {
-		// If the request doesn't have those resources populated yet,
-		// the requirements are unfulfilled
-		if req.GetRequiredResources() == nil || len(req.GetRequiredResources()) == 0 {
+	// Check if all requested resources are present in the request.
+	// Support both old (extra_resources) and new (resources) field names.
+	for name := range requirements.GetExtraResources() { //nolint:staticcheck // Supporting deprecated field for backward compatibility
+		if req.GetExtraResources() == nil { //nolint:staticcheck // Supporting deprecated field for backward compatibility
 			return true
 		}
+		if _, ok := req.GetExtraResources()[name]; !ok { //nolint:staticcheck // Supporting deprecated field for backward compatibility
+			return true
+		}
+	}
 
-		// Check if all requested resources are present in the request
-		for name := range requirements.GetResources() {
-			if _, ok := req.GetRequiredResources()[name]; !ok {
-				return true
-			}
+	for name := range requirements.GetResources() {
+		if req.GetRequiredResources() == nil {
+			return true
+		}
+		if _, ok := req.GetRequiredResources()[name]; !ok {
+			return true
 		}
 	}
 
