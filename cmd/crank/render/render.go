@@ -57,6 +57,18 @@ const waitForReady = `{
 	}]
 }`
 
+// RequiredSchemasFetcher gets OpenAPI schemas for requested resource kinds.
+// This is a public interface that external consumers can implement.
+type RequiredSchemasFetcher interface {
+	Fetch(ctx context.Context, ss *fnv1.SchemaSelector) (*fnv1.Schema, error)
+}
+
+// NewOpenAPISchemasFetcher creates a RequiredSchemasFetcher that fetches
+// OpenAPI schemas from a Kubernetes API server using the discovery client.
+func NewOpenAPISchemasFetcher(client xfn.OpenAPIV3Client) RequiredSchemasFetcher {
+	return xfn.NewOpenAPISchemasFetcher(client)
+}
+
 // Annotations added to composed resources.
 const (
 	AnnotationKeyCompositionResourceName = "crossplane.io/composition-resource-name"
@@ -75,6 +87,10 @@ type Inputs struct {
 	ExtraResources      []unstructured.Unstructured
 	RequiredResources   []unstructured.Unstructured
 	Context             map[string][]byte
+
+	// RequiredSchemasFetcher is used to fetch OpenAPI schemas for required
+	// resources. If nil, a no-op fetcher will be used.
+	RequiredSchemasFetcher RequiredSchemasFetcher
 
 	// TODO(negz): Allow supplying observed XR and composed resource connection
 	// details. Maybe as Secrets? What if secret stores are in use?
@@ -203,7 +219,11 @@ func Render(ctx context.Context, log logging.Logger, in Inputs) (Outputs, error)
 		}
 	}()
 
-	runner := xfn.NewFetchingFunctionRunner(runtimes, NewFilteringFetcher(append(in.ExtraResources, in.RequiredResources...)...), xfn.NopRequiredSchemasFetcher{})
+	schemasFetcher := in.RequiredSchemasFetcher
+	if schemasFetcher == nil {
+		schemasFetcher = xfn.NopRequiredSchemasFetcher{}
+	}
+	runner := xfn.NewFetchingFunctionRunner(runtimes, NewFilteringFetcher(append(in.ExtraResources, in.RequiredResources...)...), schemasFetcher)
 
 	observed := composite.ComposedResourceStates{}
 

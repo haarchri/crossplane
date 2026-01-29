@@ -45,6 +45,10 @@ type Inputs struct {
 	FunctionCredentials []corev1.Secret
 	RequiredResources   []unstructured.Unstructured
 	Context             map[string][]byte
+
+	// RequiredSchemasFetcher is used to fetch OpenAPI schemas for required
+	// resources. If nil, a no-op fetcher will be used.
+	RequiredSchemasFetcher render.RequiredSchemasFetcher
 }
 
 // Outputs contains all outputs from the operation render process.
@@ -78,7 +82,11 @@ func Render(ctx context.Context, log logging.Logger, in Inputs) (Outputs, error)
 		}
 	}()
 
-	runner := xfn.NewFetchingFunctionRunner(runtimes, render.NewFilteringFetcher(in.RequiredResources...), xfn.NopRequiredSchemasFetcher{})
+	schemasFetcher := in.RequiredSchemasFetcher
+	if schemasFetcher == nil {
+		schemasFetcher = xfn.NopRequiredSchemasFetcher{}
+	}
+	runner := xfn.NewFetchingFunctionRunner(runtimes, render.NewFilteringFetcher(in.RequiredResources...), schemasFetcher)
 
 	// Build the function context from supplied context data
 	fctx := &structpb.Struct{Fields: map[string]*structpb.Value{}}
